@@ -282,3 +282,25 @@ func TestHistoryRejectsReservedAndSnapshotlessEvents(t *testing.T) {
 		t.Fatal("Append accepted an event without a record snapshot")
 	}
 }
+
+func TestDeleteRecordIsTheRollbackHalfOfASupersede(t *testing.T) {
+	root := newRepo(t)
+	rec := sampleRecord(t, "main")
+	if err := WriteRecord(root, rec); err != nil {
+		t.Fatalf("WriteRecord: %v", err)
+	}
+	if _, err := ReadRecord(RecordPath(root, rec)); err != nil {
+		t.Fatalf("record should exist: %v", err)
+	}
+	if err := DeleteRecord(root, rec); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+	if _, err := os.Stat(RecordPath(root, rec)); !os.IsNotExist(err) {
+		t.Fatalf("record still on disk after delete: %v", err)
+	}
+	// Deleting an already-absent record is idempotent: a rollback must not fail
+	// because the first rollback already ran.
+	if err := DeleteRecord(root, rec); err != nil {
+		t.Fatalf("second DeleteRecord: %v", err)
+	}
+}

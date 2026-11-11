@@ -15,6 +15,10 @@ const SampleFloor = 30
 
 func init() { Register("metrics", runMetrics) }
 
+// StaleSchemaKey names the exclusion bucket for clef decisions recorded under an
+// obsolete pre-flight schema.
+const StaleSchemaKey = "stale_schema"
+
 // decisionEvents are the history events that carry a routing decision: the
 // first one in a routing id's history fixes the decision that metrics measures.
 var decisionEvents = map[string]bool{
@@ -92,6 +96,11 @@ func computeMetrics(root string) (*metricsReport, []string, error) {
 		Excluded: map[string]int{
 			string(state.DecidedByJointFallback):   0,
 			string(state.DecidedByOverrideReRoute): 0,
+			// StaleSchema counts clef decisions recorded under an obsolete
+			// pre-flight schema. They stay visible in by_decided_by (they are
+			// real decisions) and are excluded here by name, so a reader can
+			// reconcile the denominator instead of finding a silent gap.
+			StaleSchemaKey: 0,
 		},
 	}
 
@@ -124,8 +133,9 @@ func computeMetrics(root string) (*metricsReport, []string, error) {
 			report.Excluded[string(rec.DecidedBy)]++
 		case state.DecidedByClef:
 			if rec.SchemaVersion != state.SchemaVersion {
-				// A decision recorded under a stale schema is not comparable
-				// with the current criteria contract.
+				// Not comparable with the current criteria contract: excluded
+				// from the denominator for a reason the report names.
+				report.Excluded[StaleSchemaKey]++
 				continue
 			}
 			denominator++

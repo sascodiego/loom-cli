@@ -193,6 +193,16 @@ func WriteRecord(root string, r *Record) error {
 	return writeFileAtomic(path, data)
 }
 
+// DeleteRecord removes a record file. It is the rollback half of the supersede
+// sequence: a successor written before its predecessor's supersede can be
+// withdrawn cleanly, leaving the branch with exactly one open record.
+func DeleteRecord(root string, r *Record) error {
+	if err := os.Remove(RecordPath(root, r)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete record %s: %w", r.RoutingID, err)
+	}
+	return nil
+}
+
 // ReadRecord decodes one record and rejects unknown fields.
 func ReadRecord(path string) (*Record, error) {
 	data, err := os.ReadFile(path)
