@@ -107,9 +107,10 @@ units in commit order per milestone.
 
 - **L1** (user, verbatim) `Ahira usando ODD vamis a empezar con el desarrollo de
   ese plan`
-- **L2** (decision, planning) Delivery strategy: repository has no remote
-  (`git remote -v` empty), so `ask-on-risk`/chaining is inapplicable; local
-  feature branch `feat/method-router-v1` with work-unit commits.
+- **L2** (decision, planning) Delivery strategy: the repository had no remote
+  when the feature started, so `ask-on-risk`/chaining was inapplicable and the
+  work ran as work-unit commits on the local branch `feat/method-router-v1`.
+  **Updated at delivery (L11).**
 - **L4** (evidence) T2–T4 checks: `go vet ./...` clean; `go test ./...` green
   (cmd/router, internal/cli, internal/state). Because M1 tests were written
   after their implementation, two load-bearing guards were mutation-checked:
@@ -138,6 +139,10 @@ units in commit order per milestone.
   the EGM review artifacts and the analysis under `docs/analysis/` (historical
   record), plus `docs/designs/method-router.md` and this feature document, which
   must name the old path to define and verify the rename. Dated 2026-11-11.
+- **L11** (decision, delivery) Published after the feature closed: `origin` set to
+  `https://github.com/sascodiego/loom-cli.git` (empty at the time) and
+  `feat/method-router-v1` renamed to `main` with the full history pushed. The
+  earlier branch name in L2 is therefore historical; the work lives on `main`.
 - **L10** (evidence, close) Full suite at feature close: `go vet ./...` clean,
   `go test ./...` green across cmd/router, internal/cli, internal/preflight,
   internal/provider, internal/registry, internal/state. Real-binary smoke runs:
