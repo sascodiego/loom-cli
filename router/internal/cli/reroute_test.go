@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"loom/router/internal/state"
 )
@@ -181,4 +183,98 @@ func TestReRouteNeverTouchesTheWorkingTree(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("re-route wrote into the working tree: %v", entries)
 	}
+}
+
+// openRecord builds an in-memory record for the supersede unit tests.
+func openRecord(t *testing.T, branch string) *state.Record {
+	t.Helper()
+	id, err := state.NewRoutingID()
+	if err != nil {
+		t.Fatalf("NewRoutingID: %v", err)
+	}
+	return &state.Record{
+		SchemaVersion: state.SchemaVersion,
+		RoutingID:     id,
+		Slug:          "supersede-fixture",
+		Branch:        branch,
+		BranchEncoded: state.EncodeBranch(branch),
+		Method:        "odd",
+		Tier:          "medium",
+		DecidedAt:     time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC),
+		RequestID:     "req-" + id[:8],
+		Provider:      "cloudflare",
+		Model:         "@cf/cloudflare/clef",
+		CriteriaHash:  "deadbeef",
+		DecidedBy:     state.DecidedByClef,
+		HumanApproved: true,
+		PayloadHash:   "cafebabe",
+		Status:        state.StatusOpen,
+	}
+}
+
+// fakeRecordStore records the write order and can fail a chosen write.
+type fakeRecordStore struct {
+	failOn  string // routing id whose write fails
+	writes  []string
+	deletes []string
+}
+
+func (f *fakeRecordStore) Write(r *state.Record) error {
+	f.writes = append(f.writes, r.RoutingID)
+	if r.RoutingID == f.failOn {
+		return errInjectedWrite
+	}
+	return nil
+}
+
+func (f *fakeRecordStore) Delete(r *state.Record) error {
+	f.deletes = append(f.deletes, r.RoutingID)
+	return nil
+}
+
+var errInjectedWrite = errors.New("injected write failure")
+
+// The supersede must never leave the old record marked superseded without a
+// successor: the successor is written first, and a failure on the old record
+// rolls the successor back so the branch keeps exactly one open record.
+func TestSupersedeWritesSuccessorFirstAndRollsBack(t *testing.T) {
+	old := openRecord(t, "main")
+	fresh := openRecord(t, "main")
+
+	t.Run("old write fails", func(t *testing.T) {
+		store := &fakeRecordStore{failOn: old.RoutingID}
+		err := supersedeRecords(store, old, fresh)
+		if err == nil {
+			t.Fatal("supersede succeeded despite a failed write")
+		}
+		if len(store.writes) != 2 || store.writes[0] != fresh.RoutingID {
+			t.Fatalf("write order = %v, want the successor first", store.writes)
+		}
+		if len(store.deletes) != 1 || store.deletes[0] != fresh.RoutingID {
+			t.Fatalf("deletes = %v, want the successor rolled back", store.deletes)
+		}
+	})
+
+	t.Run("successor write fails", func(t *testing.T) {
+		store := &fakeRecordStore{failOn: fresh.RoutingID}
+		if err := supersedeRecords(store, old, fresh); err == nil {
+			t.Fatal("supersede succeeded despite a failed successor write")
+		}
+		if len(store.writes) != 1 {
+			t.Fatalf("writes = %v, want only the failed successor attempt", store.writes)
+		}
+		if len(store.deletes) != 0 {
+			t.Fatalf("deletes = %v, want none: nothing was written to roll back", store.deletes)
+		}
+	})
+
+	t.Run("both writes succeed", func(t *testing.T) {
+		store := &fakeRecordStore{}
+		if err := supersedeRecords(store, old, fresh); err != nil {
+			t.Fatalf("supersede: %v", err)
+		}
+		if len(store.deletes) != 0 {
+			t.Fatalf("deletes = %v, want none", store.deletes)
+		}
+	})
 }

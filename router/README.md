@@ -169,7 +169,10 @@ degradation path, not the baseline.
 - **disagreement** — `decided_by: user_gate_override`, which counts in the
   denominator.
 - **excluded** — `joint_fallback` and `override_re_route`, counted separately and
-  never blended into the rate.
+  never blended into the rate, plus `stale_schema`: a clef decision recorded under
+  an obsolete pre-flight schema. Stale decisions stay visible in `by_decided_by`
+  (they are real decisions) and are excluded from the denominator by name, so
+  `clef = clean + stale_schema` always reconciles.
 - **suppressed** below 30 decisions, because a rate over a handful of decisions
   means nothing.
 

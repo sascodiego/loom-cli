@@ -159,8 +159,14 @@ func TestMetricsExcludesFallbackAndReRouteFromTheDenominator(t *testing.T) {
 	if excluded["override_re_route"] != float64(1) {
 		t.Fatalf("excluded[override_re_route] = %v, want 1", excluded["override_re_route"])
 	}
-	if len(excluded) != 2 {
-		t.Fatalf("excluded = %v, want exactly the two declared keys", excluded)
+	wantKeys := []string{"joint_fallback", "override_re_route", "stale_schema"}
+	if len(excluded) != len(wantKeys) {
+		t.Fatalf("excluded = %v, want exactly %v", excluded, wantKeys)
+	}
+	for _, k := range wantKeys {
+		if _, ok := excluded[k]; !ok {
+			t.Fatalf("excluded = %v, missing %q", excluded, k)
+		}
 	}
 	rate, ok := got["agreement_rate"].(float64)
 	if !ok || rate != 1.0 {
@@ -239,5 +245,69 @@ func TestMetricsCountsOneDecisionPerRoutingID(t *testing.T) {
 	rate, ok := got["agreement_rate"].(float64)
 	if !ok || rate != 1.0 {
 		t.Fatalf("agreement_rate = %v, want 1.0", got["agreement_rate"])
+	}
+}
+
+// A clef decision recorded under a stale pre-flight schema is not comparable
+// with the current contract. It must stay visible in by_decided_by (it is still
+// a real decision) while being excluded from the denominator for a named
+// reason, so a reader can reconcile the numbers instead of finding a silent gap.
+func TestMetricsNamesStaleSchemaDecisions(t *testing.T) {
+	root := routerRepo(t)
+	decideOn(t, root, state.DecidedByClef, true, "odd")
+
+	staleID, err := state.NewRoutingID()
+	if err != nil {
+		t.Fatalf("mint routing id: %v", err)
+	}
+	stale := &state.Record{
+		SchemaVersion: state.SchemaVersion - 1,
+		RoutingID:     staleID,
+		Slug:          "stale",
+		Branch:        "main",
+		BranchEncoded: state.EncodeBranch("main"),
+		Method:        "odd",
+		Tier:          "medium",
+		DecidedAt:     time.Now().UTC(),
+		RequestID:     "req-stale",
+		Provider:      "cloudflare",
+		Model:         "@cf/cloudflare/clef",
+		CriteriaHash:  "old",
+		DecidedBy:     state.DecidedByClef,
+		HumanApproved: true,
+		PayloadHash:   "old",
+		Status:        state.StatusOpen,
+	}
+	// The stale file is written straight to disk, not through WriteRecord: the
+	// writer refuses an obsolete schema, and that refusal is exactly why such a
+	// file only ever appears after a binary downgrade or a hand-edited tree.
+	data, err := json.MarshalIndent(stale, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal stale: %v", err)
+	}
+	path := state.RecordPath(root, stale)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("write stale record: %v", err)
+	}
+	if err := state.Append(root, state.Event{
+		Event: state.EventDecided, DecidedBy: stale.DecidedBy, HumanApproved: true, Record: stale,
+	}); err != nil {
+		t.Fatalf("append stale history: %v", err)
+	}
+
+	got, _ := runMetricsCmd(t, root, nil)
+	excluded := got["excluded"].(map[string]any)
+	if excluded["stale_schema"] != float64(1) {
+		t.Fatalf("excluded = %v, want stale_schema: 1", excluded)
+	}
+	byDecidedBy := got["by_decided_by"].(map[string]any)
+	if byDecidedBy["clef"] != float64(2) {
+		t.Fatalf("by_decided_by.clef = %v, want 2 (both decisions stay visible)", byDecidedBy["clef"])
+	}
+	if got["sample"] != float64(1) {
+		t.Fatalf("sample = %v, want 1: only the current-schema decision is comparable", got["sample"])
 	}
 }

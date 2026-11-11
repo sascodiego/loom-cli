@@ -11,6 +11,44 @@ import (
 
 func init() { Register("re-route", runReRoute) }
 
+// recordWriter is the narrow slice of the state package the supersede sequence
+// needs. Narrowing it keeps the rollback path testable without a filesystem.
+type recordWriter interface {
+	Write(*state.Record) error
+	Delete(*state.Record) error
+}
+
+// fsRecordStore adapts the state package's file-backed writers.
+type fsRecordStore struct{ root string }
+
+func (s fsRecordStore) Write(r *state.Record) error  { return state.WriteRecord(s.root, r) }
+func (s fsRecordStore) Delete(r *state.Record) error { return state.DeleteRecord(s.root, r) }
+
+// supersedeRecords writes the successor first and the superseded predecessor
+// second.
+//
+// The order matters: a new file cannot destroy anything, so a failure there
+// leaves the branch untouched. A failure on the predecessor's write would
+// otherwise leave a record marked superseded pointing at a successor that never
+// landed, so the successor is rolled back and the branch keeps exactly one open
+// record — recoverable, and true.
+func supersedeRecords(w recordWriter, old, fresh *state.Record) error {
+	if err := w.Write(fresh); err != nil {
+		return fmt.Errorf("write the successor record: %w (nothing changed)", err)
+	}
+	old.Status = state.StatusSuperseded
+	old.SupersededBy = fresh.RoutingID
+	if err := w.Write(old); err != nil {
+		if derr := w.Delete(fresh); derr != nil {
+			return fmt.Errorf("write the superseded record: %w (rollback of successor %s also failed: %v)",
+				err, fresh.RoutingID, derr)
+		}
+		return fmt.Errorf("write the superseded record: %w (successor %s rolled back, record left open)",
+			err, fresh.RoutingID)
+	}
+	return nil
+}
+
 // runReRoute supersedes an open record with a new one under the target method.
 // It never touches the working tree: the discard of in-flight artifacts is the
 // user's and their orchestration agent's job — the CLI only records the
@@ -77,13 +115,8 @@ func runReRoute(ctx context.Context, env *Env, args []string) error {
 	fresh.Status = state.StatusOpen
 	fresh.SupersededBy = ""
 
-	old.Status = state.StatusSuperseded
-	old.SupersededBy = newID
-	if err := state.WriteRecord(env.Root, old); err != nil {
-		return Fail("write superseded record: %v", err)
-	}
-	if err := state.WriteRecord(env.Root, &fresh); err != nil {
-		return Fail("write new record: %v", err)
+	if err := supersedeRecords(fsRecordStore{root: env.Root}, old, &fresh); err != nil {
+		return Fail("%v", err)
 	}
 
 	// Audit trail: the request on the old routing id, the supersede that
