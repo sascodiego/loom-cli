@@ -64,6 +64,20 @@ commit per task.
   method remains the user-approved target, so the call supplies provenance and
   evidence, not authority — the user's choice is what the record says, and
   `suggested_method`/`suggested_tier` preserve what Clef answered.
+- **L6** (evidence, close) Each drift in `2026-11-11_DRIFT_REPORT.md` mapped to its
+  fix: (1) tier vocabulary → T1, design:336 corrected to `low | medium | high`;
+  (2) `re-route` fresh decision → T2, design:246-253 and M4's reroute bullet now
+  say it re-classifies, and the skill documents that `--input` carries the
+  re-declared pre-flight; (3) `CLOUDFLARE_ACCOUNT_ID` → T3, read through the
+  `{account_id}` endpoint placeholder; (4) `internal/state/config.go` → T4, the
+  file now exists and `detect.go` keeps detection only; (5) root README copy
+  claim → T5, names the three packages and states `gentle-sdd` keeps its own
+  convention; (6) M4 test path → T5, `router/cmd/router/main_test.go`.
+  Checks: `go vet ./...` clean, `go test -count=1 ./...` green in all six
+  packages, real-binary runs for the placeholder (exit 2 without the variable,
+  exit 3 with it, URL substituted) and for re-route's failure path (exit 3 after
+  three attempts, predecessor open, history unchanged). A grep for the obsolete
+  vocabulary over living docs returns only this document's own citation of it.
 - **L5** (delivery) Slice boundary recorded: PR #1 holds commits 2fb9215 (supersede
   atomicity + stale-schema naming); this PR holds everything after it on
   `fix/drift-fixes`. The 427-line count reported against `main` includes PR #1's

@@ -65,7 +65,8 @@ model answer cannot be smuggled in. Schema: `references/preflight-schema.md`.
 router decide --input <file|->   # exit 0 JSON, 2 invalid declaration, 3 provider failure
 ```
 
-Output: `tier`, `method`, `probabilities`, `request_id`, `provider`, `model`,
+Output: `tier` (`low`, `medium`, `high`), `method`, `probabilities`,
+`request_id`, `provider`, `model`,
 `criteria_hash`, `payload_hash`, `ambiguous`, and `substituted` when the
 availability rule fired.
 
@@ -157,12 +158,23 @@ When observed scope outgrows the decided method, propose a re-route with
 evidence. Never re-route unilaterally.
 
 ```bash
-router re-route --routing-id <id> --method <target> \
+router re-route --routing-id <id> --method <target> --input <file|-> \
   --justification "<observed evidence>" --requested-by agent
 ```
 
+`--input` carries the **re-declared pre-flight**: the scope has grown, so the
+declaration is rewritten for what the work is now. The CLI re-classifies it with
+Clef before touching any record, so the new record's `request_id`, `payload_hash`,
+`criteria_hash`, `tier` and `suggested_*` come from a real call rather than from
+the predecessor. The recorded `method` stays the target *you* passed — the
+classification supplies evidence, not authority.
+
 On approval this supersedes the current record, opens a fresh one under the
 target method with `decided_by: override_re_route`, and records the whole trail.
+If the classification fails (bad declaration, provider failure) nothing is
+persisted and the current record stays open: fix the declaration and retry, and
+say so to the user instead of silently keeping the old method.
+
 The in-flight work is **discarded, not migrated**: the change restarts under the
 new method. Discarding artifacts is your and the user's job — the CLI only
 records.

@@ -31,7 +31,7 @@ go test ./...
 | `router detect` | Lists open routing records for the current branch. Working tree only: no network, no git history. |
 | `router decide --input <file\|->` | Classifies a declared pre-flight through Clef and prints the gate-ready decision. |
 | `router record --input <file\|->` | Persists the confirmed decision: mints the `routing_id`, writes the record, appends the first history event. |
-| `router re-route --routing-id <id> --method <m> [--justification <text>] [--requested-by agent\|user]` | Supersedes an open record with a fresh one under the target method. Never touches the working tree. |
+| `router re-route --routing-id <id> --method <m> --input <file\|-> [--justification <text>] [--requested-by agent\|user]` | Supersedes an open record: re-classifies the re-declared pre-flight and records a fresh decision under the target method. Never touches the working tree. |
 | `router close --routing-id <id>` | Marks an open record closed at ship. |
 | `router metrics [--json]` | Agreement rate over recorded decisions, stratified, suppressed below 30 decisions. |
 
@@ -41,8 +41,8 @@ Stdout is always one JSON document. Human-readable text goes to stderr.
 Multiple open records are listed in full: the human resolves which one the
 session continues.
 
-`decide` prints `tier`, `method`, `probabilities` (every option, not only the
-winner), `request_id`, `provider`, `model`, `criteria_hash`, `payload_hash`,
+`decide` prints `tier` (one of `low`, `medium`, `high`), `method`, `probabilities`
+(every option, not only the winner), `request_id`, `provider`, `model`, `criteria_hash`, `payload_hash`,
 `ambiguous`, and `substituted` when the availability rule fired. The confidence
 policy: when the top two methods are within 0.05, `ambiguous` is true and the
 gate must present both.
@@ -64,7 +64,7 @@ Credentials come from the environment and are never persisted:
 | Variable | Purpose |
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | API key for the endpoint. Required. |
-| `CLOUDFLARE_ACCOUNT_ID` | Account id, when the endpoint URL needs it. |
+| `CLOUDFLARE_ACCOUNT_ID` | Account id. Required only when the endpoint contains the placeholder `{account_id}`, which is substituted at provider build time; an endpoint without the placeholder never reads it. |
 
 Unknown fields are rejected in both the config and the pre-flight declaration,
 so a stale or hand-edited file fails loudly instead of silently misclassifying.
@@ -88,6 +88,14 @@ All routing state is plain tracked files. Rollback is a `git revert` of
 `fix--339-cedula`. The encoding alone is not injective (a branch may contain a
 literal `--`); the true branch name lives inside each record and readers compare
 it, so a collision is reported as a warning instead of being trusted.
+
+A re-route re-classifies rather than inheriting: it takes the re-declared
+pre-flight with `--input`, runs the same pipeline as `decide`, and records the
+fresh `request_id`, `payload_hash`, `criteria_hash`, `tier` and `suggested_*`.
+The recorded `method` stays the target you passed with `--method`, and
+`decided_by` stays `override_re_route`: the call supplies evidence, not
+authority. A classification failure persists nothing and leaves the predecessor
+open.
 
 The record carries the facts of the decision, including `payload_hash` — the
 SHA-256 of the exact pre-flight declaration that was classified. The prose
