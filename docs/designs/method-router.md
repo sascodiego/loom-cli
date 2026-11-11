@@ -244,7 +244,12 @@ stdout, human text on stderr. Subcommands:
     `fix--339-cedula`); the true branch name is stored inside the record, so
     the encoding is lossless.
 *   `router re-route` — supersedes an open record (`superseded_by`, justification,
-    `requested_by: agent | user`), appends history, emits the new decision.
+    `requested_by: agent | user`) and emits the new decision. It **re-classifies**:
+    it takes the re-declared pre-flight (`--input`), runs the same pipeline as
+    `decide`, and records the fresh `request_id`, `payload_hash`, `criteria_hash`,
+    `tier` and `suggested_*`. The recorded `method` stays the user-approved
+    target — the call supplies provenance and evidence, not authority. A
+    classification failure persists nothing and leaves the predecessor open.
 *   `router close` — marks `status: closed` at ship; appends history.
 *   `router metrics` — computes the phase-1 agreement rate from
     `.router/history/`: share of `decided_by: clef` decisions with
@@ -328,8 +333,10 @@ declared task definition, shown to the user for approval before it is sent.
     structure — a declared subsystem that does not exist is rejected with
     exit 2), `scope_estimate` (expected step count and session count,
     agent-declared).
-*   Clef output: `effort_tier` (trivial | small | medium | large) and `method`.
-    The agent never reports a tier.
+*   Clef output: `effort_tier` (low | medium | high) and `method`.
+    The agent never reports a tier. The vocabulary is closed: `internal/state`
+    declares it once and validates it on record write and read, so a value
+    outside it fails loudly instead of persisting.
 
 Residual bias: the agent frames the declaration. Mitigations: the user sees
 and approves the declaration at the confirmation gate before it reaches Clef,
@@ -607,7 +614,9 @@ section is the plan the implementation will follow.
     `request_id`, `provider`, `model`, `criteria_hash`, `ambiguous`,
     `substituted` where the availability rule fired).
 *   **`router/internal/cli/reroute.go`** (create) — supersedes an open record;
-    appends history; never touches the working tree.
+    re-classifies the re-declared pre-flight (`--input`) so the new record carries
+    fresh provenance; appends history; never touches the working tree beyond
+    `.router/`.
 *   **`router/internal/cli/metrics.go`** (create) — agreement-rate report from
     `.router/history/`: share of `decided_by: clef` with `human_approved:
     true`, stratified by `decided_by` and method. Clean = `decided_by: clef`
@@ -621,7 +630,7 @@ section is the plan the implementation will follow.
 *   **`router/internal/cli/decide_test.go`** (create) — output-shape golden
     test, gate-override path (`decided_by: user_gate_override`),
     ambiguous-marks, substitution rule.
-*   **`router/internal/cli/main_test.go`** (create) — CLI-layer exit-code
+*   **`router/cmd/router/main_test.go`** (create) — CLI-layer exit-code
     contract: per-subcommand 0/2/3 mapping including provider failure and
     validation failures.
 *   **`router/internal/cli/e2e_test.go`** (create) — end-to-end CUJ coverage

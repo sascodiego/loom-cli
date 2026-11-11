@@ -21,6 +21,27 @@ import (
 // validates as current.
 const SchemaVersion = 1
 
+// Tier is the complexity band the classifier chooses, and the vocabulary is a
+// contract: the criteria files, the routing skill and the confirmation gate all
+// speak it. Values outside it are refused on write and reported on read.
+const (
+	TierLow    = "low"
+	TierMedium = "medium"
+	TierHigh   = "high"
+)
+
+// TierVocabulary is the closed set rendered for error messages and docs.
+const TierVocabulary = "low|medium|high"
+
+// ValidTier reports whether a tier is one of the three declared bands.
+func ValidTier(tier string) bool {
+	switch tier {
+	case TierLow, TierMedium, TierHigh:
+		return true
+	}
+	return false
+}
+
 // Status is the lifecycle of one routing record.
 type Status string
 
@@ -104,7 +125,9 @@ func (r *Record) Validate() error {
 	case r.Method == "":
 		return fmt.Errorf("missing method")
 	case r.Tier == "":
-		return fmt.Errorf("missing tier")
+		return fmt.Errorf("missing tier (want %s)", TierVocabulary)
+	case !ValidTier(r.Tier):
+		return fmt.Errorf("invalid tier %q (want %s)", r.Tier, TierVocabulary)
 	case r.DecidedAt.IsZero():
 		return fmt.Errorf("missing decided_at")
 	case !r.DecidedBy.Valid():

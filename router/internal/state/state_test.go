@@ -304,3 +304,69 @@ func TestDeleteRecordIsTheRollbackHalfOfASupersede(t *testing.T) {
 		t.Fatalf("second DeleteRecord: %v", err)
 	}
 }
+
+// The tier vocabulary is a contract, not a free-text label: the design, the
+// criteria files and the routing skill all speak low|medium|high, so a record
+// carrying anything else must fail loudly instead of persisting.
+func TestTierVocabulary(t *testing.T) {
+	for _, ok := range []string{"low", "medium", "high"} {
+		if !ValidTier(ok) {
+			t.Errorf("ValidTier(%q) = false, want true", ok)
+		}
+	}
+	for _, bad := range []string{"", "trivial", "small", "large", "LOW", "High", " medium"} {
+		if ValidTier(bad) {
+			t.Errorf("ValidTier(%q) = true, want false", bad)
+		}
+	}
+}
+
+func TestRecordRejectsATierOutsideTheVocabulary(t *testing.T) {
+	for _, bad := range []string{"trivial", "large", ""} {
+		r := sampleRecord(t, "main")
+		r.Tier = bad
+		err := r.Validate()
+		if err == nil || !strings.Contains(err.Error(), "low|medium|high") {
+			t.Fatalf("Validate() with tier %q = %v, want a vocabulary error naming low|medium|high", bad, err)
+		}
+		if werr := WriteRecord(t.TempDir(), r); werr == nil {
+			t.Fatalf("WriteRecord accepted tier %q", bad)
+		}
+	}
+}
+
+// detect validates records on read too: a file with an obsolete tier is
+// reported as a warning and never becomes a continuation candidate.
+func TestDetectRejectsARecordWithAnUnknownTier(t *testing.T) {
+	root := newRepoForDetect(t)
+	rec := sampleRecord(t, "main")
+	if err := WriteRecord(root, rec); err != nil {
+		t.Fatalf("WriteRecord: %v", err)
+	}
+	// Rewrite the file with an obsolete tier, as a downgrade or a hand edit
+	// would leave it.
+	data, err := os.ReadFile(RecordPath(root, rec))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	m["tier"] = "trivial"
+	data, _ = json.Marshal(m)
+	if err := os.WriteFile(RecordPath(root, rec), data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	res, err := Detect(root, "main")
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if len(res.Candidates) != 0 || res.Verdict != VerdictNew {
+		t.Fatalf("detect = %+v, want no candidate for an invalid tier", res)
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "low|medium|high") {
+		t.Fatalf("warnings = %v, want the vocabulary named", res.Warnings)
+	}
+}

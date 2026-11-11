@@ -167,11 +167,14 @@ func TestE2EReRouteSupersedesAndRestartsUnderTheTargetMethod(t *testing.T) {
 	oldRec := decodeRecord(t, out)
 	oldID, _ := oldRec["routing_id"].(string)
 
-	// CUJ 4: the work grew past odd; the re-route supersedes it.
-	envR, outR, errb := newEnv(t, root, "")
+	// CUJ 4: the work grew past odd; the re-route re-classifies the re-declared
+	// pre-flight and supersedes the record (Clef still answers odd/medium; the
+	// recorded method stays the user-approved ftd).
+	envR, outR, errb := newEnv(t, root, decideDeclaration)
 	if err := Handle(context.Background(), envR, "re-route", []string{
 		"--routing-id", oldID,
 		"--method", "ftd",
+		"--input", "-",
 		"--justification", "the change now spans three subsystems and a feature doc",
 		"--requested-by", "agent",
 	}); err != nil {
@@ -186,7 +189,7 @@ func TestE2EReRouteSupersedesAndRestartsUnderTheTargetMethod(t *testing.T) {
 		t.Fatalf("fresh record = %+v, want ftd / override_re_route / open", fresh)
 	}
 	if fresh["suggested_method"] != "odd" {
-		t.Fatalf("suggested_method = %v, want the original suggestion inherited", fresh["suggested_method"])
+		t.Fatalf("suggested_method = %v, want Clef's fresh answer", fresh["suggested_method"])
 	}
 
 	superseded, _, err := state.FindRecord(root, oldID)

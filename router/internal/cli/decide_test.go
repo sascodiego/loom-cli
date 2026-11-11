@@ -256,3 +256,37 @@ func TestDecideRequiresConfig(t *testing.T) {
 	var stdout bytes.Buffer
 	_ = stdout // config errors never write JSON
 }
+
+// The endpoint may name the account instead of embedding it. The real provider
+// factory is exercised here (not the test override), because the substitution
+// happens while building the provider.
+func TestProviderFactorySubstitutesTheAccountPlaceholder(t *testing.T) {
+	cfg := &state.Config{
+		Provider: "cloudflare",
+		Model:    "@cf/cloudflare/clef",
+		Endpoint: "https://api.example/client/v4/accounts/{account_id}/ai/run/@cf/cloudflare/clef",
+	}
+	t.Setenv(state.EnvCloudflareToken, "test-token")
+	t.Setenv(state.EnvCloudflareAccount, "")
+
+	_, err := providerFactory(cfg)
+	if err == nil || !strings.Contains(err.Error(), state.EnvCloudflareAccount) {
+		t.Fatalf("providerFactory = %v, want an error naming %s", err, state.EnvCloudflareAccount)
+	}
+
+	t.Setenv(state.EnvCloudflareAccount, "abc123")
+	p, err := providerFactory(cfg)
+	if err != nil {
+		t.Fatalf("providerFactory: %v", err)
+	}
+	cf, ok := p.(*provider.Cloudflare)
+	if !ok {
+		t.Fatalf("provider = %T, want *provider.Cloudflare", p)
+	}
+	if !strings.Contains(cf.Endpoint, "/accounts/abc123/") {
+		t.Fatalf("endpoint = %q, want the account id substituted", cf.Endpoint)
+	}
+	if strings.Contains(cf.Endpoint, "{account_id}") {
+		t.Fatalf("endpoint = %q, placeholder left in place", cf.Endpoint)
+	}
+}

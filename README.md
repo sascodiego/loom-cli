@@ -54,8 +54,11 @@ criteria; the router never infers either.
 
 Every package mirrors its artifacts to Engram under a deterministic topic key,
 with the files as the source of truth and the mirror as a search index. The
-contract is `docs/engram-contract.md`, reproduced per package under
-`<package>/system/skills/_shared/engram-contract.md`. The `rsc` ledger (`.rsc/`)
+canonical contract is `docs/engram-contract.md`; `rsc-ftd`, `rsc-asdd` and `egm`
+each carry a copy with their own naming table under
+`<package>/system/skills/_shared/engram-contract.md`. `gentle-sdd` keeps its own
+Engram convention unchanged (it was already Engram-native), so it points at
+`docs/engram-contract.md` rather than duplicating it. The `rsc` ledger (`.rsc/`)
 is never mirrored, and adversarial reviewers never call memory tools.
 
 ## Status

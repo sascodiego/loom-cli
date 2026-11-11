@@ -50,15 +50,20 @@ func supersedeRecords(w recordWriter, old, fresh *state.Record) error {
 }
 
 // runReRoute supersedes an open record with a new one under the target method.
-// It never touches the working tree: the discard of in-flight artifacts is the
-// user's and their orchestration agent's job — the CLI only records the
-// supersede event and emits the fresh decision.
+// It re-classifies the re-declared pre-flight for real (S2): the classification
+// runs before anything is written, so a failure there leaves the predecessor
+// untouched. The recorded method stays the user-approved --method; the call
+// supplies provenance and evidence, not authority. It never touches the
+// working tree: the discard of in-flight artifacts is the user's and their
+// orchestration agent's job — the CLI only records the supersede event and
+// emits the fresh decision.
 func runReRoute(ctx context.Context, env *Env, args []string) error {
 	fs := NewFlagSet("re-route")
 	routingID := fs.String("routing-id", "", "routing id of the open record to supersede")
 	method := fs.String("method", "", "target method of the re-route")
 	justification := fs.String("justification", "", "why the change is being re-routed")
 	requestedBy := fs.String("requested-by", "agent", "who requested the re-route: agent or user")
+	input := fs.String("input", "", "path to the re-declared pre-flight JSON, or - for stdin")
 	if err := ParseFlags(fs, args); err != nil {
 		return err
 	}
@@ -68,6 +73,8 @@ func runReRoute(ctx context.Context, env *Env, args []string) error {
 		return Fail("missing --routing-id")
 	case *method == "":
 		return Fail("missing --method")
+	case *input == "":
+		return Fail("missing --input <file|->")
 	case *requestedBy != "agent" && *requestedBy != "user":
 		return Fail("invalid --requested-by %q (want agent or user)", *requestedBy)
 	}
@@ -95,6 +102,18 @@ func runReRoute(ctx context.Context, env *Env, args []string) error {
 		return Fail("method %q is unavailable (excluded from v1 dispatch)", *method)
 	}
 
+	// The classification runs before anything is persisted: a bad declaration,
+	// an unknown subsystem, a missing config or a provider failure leaves the
+	// predecessor exactly as it stands, with no history appended.
+	data, err := ReadInput(*input, env.Stdin)
+	if err != nil {
+		return err
+	}
+	c, err := classify(ctx, env, data)
+	if err != nil {
+		return err
+	}
+
 	newID, err := state.NewRoutingID()
 	if err != nil {
 		return Fail("mint routing_id: %v", err)
@@ -104,16 +123,31 @@ func runReRoute(ctx context.Context, env *Env, args []string) error {
 	// re-route request event.
 	before := *old
 
-	fresh := *old
-	fresh.RoutingID = newID
-	fresh.Method = *method
-	fresh.DecidedBy = state.DecidedByOverrideReRoute
-	fresh.HumanApproved = false
-	fresh.UserChoice = *method
-	fresh.RequestedBy = *requestedBy
-	fresh.DecidedAt = time.Now().UTC()
-	fresh.Status = state.StatusOpen
-	fresh.SupersededBy = ""
+	// The fresh record carries the identity the predecessor owned (slug,
+	// branch) and fresh classification provenance for everything else: nothing
+	// is inherited from the old decision.
+	fresh := state.Record{
+		SchemaVersion:   old.SchemaVersion,
+		RoutingID:       newID,
+		Slug:            old.Slug,
+		Branch:          old.Branch,
+		BranchEncoded:   old.BranchEncoded,
+		Method:          *method,
+		Tier:            c.Tier,
+		DecidedAt:       time.Now().UTC(),
+		RequestID:       c.RequestID,
+		Provider:        c.Provider,
+		Model:           c.Model,
+		CriteriaHash:    c.CriteriaHash,
+		DecidedBy:       state.DecidedByOverrideReRoute,
+		HumanApproved:   false,
+		SuggestedMethod: c.SuggestedMethod,
+		SuggestedTier:   c.Tier,
+		UserChoice:      *method,
+		PayloadHash:     c.PayloadHash,
+		Status:          state.StatusOpen,
+		RequestedBy:     *requestedBy,
+	}
 
 	if err := supersedeRecords(fsRecordStore{root: env.Root}, old, &fresh); err != nil {
 		return Fail("%v", err)

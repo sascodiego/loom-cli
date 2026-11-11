@@ -1,11 +1,8 @@
 package state
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Candidate is one open routing record reported by detect. The field set is the
@@ -77,62 +74,4 @@ func Detect(root, branch string) (*DetectResult, error) {
 		res.Verdict = VerdictContinuation
 	}
 	return res, nil
-}
-
-// Config is the per-project router configuration. Credentials never live here:
-// they come from the environment.
-type Config struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Endpoint string `json:"endpoint"`
-}
-
-// Environment variables the Cloudflare provider reads at call time.
-const (
-	EnvCloudflareToken   = "CLOUDFLARE_API_TOKEN"
-	EnvCloudflareAccount = "CLOUDFLARE_ACCOUNT_ID"
-)
-
-// ConfigPath returns .router/config.json for a repository root.
-func ConfigPath(root string) string {
-	return filepath.Join(RouterDir(root), "config.json")
-}
-
-// LoadConfig reads and validates .router/config.json. A missing file is a
-// validation error that names the path, because decide cannot run without it.
-func LoadConfig(root string) (*Config, error) {
-	path := ConfigPath(root)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("no router config at %s (write %s)", path, filepath.Join(".router", "config.json"))
-		}
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	var c Config
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	if err := c.Validate(); err != nil {
-		return nil, err
-	}
-	return &c, nil
-}
-
-// Validate requires every field the provider needs.
-func (c *Config) Validate() error {
-	switch {
-	case c.Provider == "":
-		return fmt.Errorf("config: missing provider")
-	case c.Model == "":
-		return fmt.Errorf("config: missing model")
-	case c.Endpoint == "":
-		return fmt.Errorf("config: missing endpoint")
-	}
-	if strings.Contains(c.Endpoint, "\n") || strings.Contains(c.Endpoint, " ") {
-		return fmt.Errorf("config: endpoint must be a single URL")
-	}
-	return nil
 }
