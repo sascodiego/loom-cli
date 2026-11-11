@@ -82,10 +82,10 @@ milestone leaves the tree buildable and tested.
 
 | ID | Task | Specs | Route | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | Repo housekeeping: `git mv genlte-sdd gentle-sdd` + README self-path edits | S16 | inline | |
-| T2 | `router/go.mod`, `cmd/router/main.go`, `internal/cli/common.go` — entrypoint, flag parsing, repo-root discovery, exit-code contract | S7 | inline | |
-| T3 | `internal/state/open.go` + `history.go` — record read/write, append-only JSONL, branch encoding, UUID minting | S5, S6, S14 | inline | |
-| T4 | `internal/state/detect.go` + `config.go` + `cli/{detect,record,close}.go` + state tests | S2, S5, S7 | inline | |
+| T1 | Repo housekeeping: `git mv genlte-sdd gentle-sdd` + README self-path edits | S16 | inline | 2375225 (baseline) |
+| T2 | `router/go.mod`, `cmd/router/main.go`, `internal/cli/common.go` — entrypoint, flag parsing, repo-root discovery, exit-code contract | S7 | inline | 2ecff7c |
+| T3 | `internal/state/open.go` + `history.go` — record read/write, append-only JSONL, branch encoding, UUID minting | S5, S6, S14 | inline | 4c53dcd |
+| T4 | `internal/state/detect.go` + `config.go` + `cli/{detect,record,close}.go` + state tests | S2, S5, S7 | inline | 3287031 |
 | T5 | `internal/preflight/schema.go` + `validate.go` + tests — declaration schema, subsystem validation | S4, S7 | inline | |
 | T6 | `router/registry.json` + 5 `criteria/<method>/CRITERIA.md` + registry tests | S1, S8, S9, S10 | inline | |
 | T7 | `internal/provider/{provider,request,cloudflare}.go` + `cloudflare_test.go` — Clef adapter, retry, payload | S11, S12 | inline | |
@@ -110,6 +110,19 @@ units in commit order per milestone.
 - **L2** (decision, planning) Delivery strategy: repository has no remote
   (`git remote -v` empty), so `ask-on-risk`/chaining is inapplicable; local
   feature branch `feat/method-router-v1` with work-unit commits.
+- **L4** (evidence) T2–T4 checks: `go vet ./...` clean; `go test ./...` green
+  (cmd/router, internal/cli, internal/state). Because M1 tests were written
+  after their implementation, two load-bearing guards were mutation-checked:
+  removing the clef/`human_approved` rule fails
+  `TestRecordRejectsInconsistentGateOutcomes`, and removing the true-branch
+  guard fails `TestDetectWarnsOnMalformedAndForeignRecords` — the second check
+  caught a weak assertion that was then strengthened to pin the collision
+  guard exactly. From T5 onward tests are written first and RED is observed.
+- **L5** (decision, implementation) Encoded-branch collisions (`fix/339` and
+  `fix--339` encode to the same component) are resolved by the record's true
+  `branch` field, not by changing the encoding the design pins: readers filter
+  on `MatchesBranch` and report a foreign record as a warning. Losslessness
+  comes from the record content, exactly as the design states.
 - **L3** (decision, planning) Authoritative spec source: `docs/designs/method-
   router.md` (Reviewed). Specs S1–S19 quote it verbatim; where the design is
   silent, the design wins over inference and the gap is reported, never
