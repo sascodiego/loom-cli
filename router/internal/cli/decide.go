@@ -24,8 +24,12 @@ var providerFactory = func(cfg *state.Config) (provider.Provider, error) {
 	if token == "" {
 		return nil, fmt.Errorf("missing %s in the environment", state.EnvCloudflareToken)
 	}
+	endpoint, err := cfg.ResolveEndpoint(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
 	return &provider.Cloudflare{
-		Endpoint: cfg.Endpoint,
+		Endpoint: endpoint,
 		Model:    cfg.Model,
 		Token:    token,
 	}, nil
