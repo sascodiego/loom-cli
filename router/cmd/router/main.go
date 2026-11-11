@@ -34,7 +34,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitCode(err)
 	}
 
-	env := &cli.Env{Root: root, Stdout: stdout, Stderr: stderr}
+	env := &cli.Env{Root: root, Stdout: stdout, Stderr: stderr, Stdin: os.Stdin}
 	if err := cli.Handle(context.Background(), env, args[0], args[1:]); err != nil {
 		_, _ = fmt.Fprintf(stderr, "router %s: %v\n", args[0], err)
 		return cli.ExitCode(err)

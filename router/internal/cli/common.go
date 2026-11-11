@@ -5,10 +5,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -30,6 +32,8 @@ type Env struct {
 	Stdout io.Writer
 	// Stderr carries human-readable text only.
 	Stderr io.Writer
+	// Stdin backs --input - during an interactive pre-flight.
+	Stdin io.Reader
 }
 
 // Handler implements one subcommand. It returns nil on success or an error
@@ -147,4 +151,53 @@ func RepoRoot(dir string) (string, error) {
 		return "", Fail("git returned an empty repository root for %s", dir)
 	}
 	return root, nil
+}
+
+// CurrentBranch resolves the checked-out branch of the repository at root.
+// A detached HEAD is a validation error: routing state is keyed by branch.
+func CurrentBranch(root string) (string, error) {
+	cmd := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return "", Fail("detached HEAD: routing state requires a branch")
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" {
+		return "", Fail("could not resolve the current branch")
+	}
+	return branch, nil
+}
+
+// ReadInput reads a --input payload from a file path or from stdin when the
+// value is "-".
+func ReadInput(path string, stdin io.Reader) ([]byte, error) {
+	if path == "" {
+		return nil, Fail("missing --input <file|->")
+	}
+	if path == "-" {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return nil, Fail("read stdin: %v", err)
+		}
+		return data, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, Fail("read %s: %v", path, err)
+	}
+	return data, nil
+}
+
+// WriteJSON prints one JSON document followed by a newline. It is the only
+// stdout path in the package, keeping stdout machine-readable.
+func WriteJSON(w io.Writer, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return Fail("encode output: %v", err)
+	}
+	if _, err := fmt.Fprintf(w, "%s\n", data); err != nil {
+		return Fail("write output: %v", err)
+	}
+	return nil
 }
