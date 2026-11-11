@@ -64,6 +64,10 @@ commit per task.
   method remains the user-approved target, so the call supplies provenance and
   evidence, not authority — the user's choice is what the record says, and
   `suggested_method`/`suggested_tier` preserve what Clef answered.
+- **L7** (evidence, RDD) Native assessment of this PR's slice (base
+  `2fb9215`, 17 paths, 868 lines): risk `medium`, `reviewDue: false`
+  (`under_budget`). Per the contract a medium candidate is not reviewed at this
+  boundary, so no review transaction was opened and none is pending.
 - **L6** (evidence, close) Each drift in `2026-11-11_DRIFT_REPORT.md` mapped to its
   fix: (1) tier vocabulary → T1, design:336 corrected to `low | medium | high`;
   (2) `re-route` fresh decision → T2, design:246-253 and M4's reroute bullet now
