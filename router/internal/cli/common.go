@@ -109,8 +109,10 @@ usage:
   router detect                  report open records for the current branch
   router decide --input <file|-> classify a declared pre-flight (Clef)
   router record --input <file|-> persist the confirmed decision
-  router re-route --routing-id <id> --method <method> [--justification <text>] [--requested-by agent|user]
-                                 supersede an open record with a new method
+  router re-route --routing-id <id> --method <method> --input <file|->
+                 [--justification <text>] [--requested-by agent|user]
+                                 supersede an open record with a new method,
+                                 re-classifying the re-declared pre-flight
   router close --routing-id <id>  mark an open record closed
   router metrics [--json]        agreement rate over recorded decisions
 

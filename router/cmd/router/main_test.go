@@ -69,8 +69,9 @@ func TestSubcommandValidationFailureIsExitTwo(t *testing.T) {
 		{"close without routing id", []string{"close"}, "missing --routing-id"},
 		{"re-route without routing id", []string{"re-route", "--method", "odd"}, "missing --routing-id"},
 		{"re-route without method", []string{"re-route", "--routing-id", "x"}, "missing --method"},
+		{"re-route without input", []string{"re-route", "--routing-id", "x", "--method", "odd"}, "missing --input"},
 		{"metrics with a positional argument", []string{"metrics", "extra"}, "unexpected argument"},
-		{"re-route with a bad requester", []string{"re-route", "--routing-id", "x", "--method", "odd", "--requested-by", "robot"}, "requested-by"},
+		{"re-route with a bad requester", []string{"re-route", "--routing-id", "x", "--method", "odd", "--input", "-", "--requested-by", "robot"}, "requested-by"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

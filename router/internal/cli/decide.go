@@ -56,6 +56,92 @@ type DecideOutput struct {
 // AmbiguityThreshold is the confidence gap below which a decision is ambiguous.
 const AmbiguityThreshold = 0.05
 
+// classification is everything one provider call proves about a declared
+// pre-flight: the decision the confirmation gate shows plus the provenance a
+// record must carry. Both `decide` and `re-route` are built on it.
+type classification struct {
+	Tier string
+	// SuggestedMethod is Clef's answer after the availability/substitution
+	// rule: the best dispatchable method by probability.
+	SuggestedMethod string
+	Probabilities   map[string]map[string]float64
+	RequestID       string
+	Provider        string
+	Model           string
+	CriteriaHash    string
+	PayloadHash     string
+	Ambiguous       bool
+	Substituted     bool
+}
+
+// classify runs the fixed pipeline over a raw declaration: declaration parse ->
+// subsystem validation -> registry load and validation -> derive -> request ->
+// provider -> resolve. It persists nothing and writes nothing to stdout, so a
+// caller (record-free paths like re-route) can classify before deciding whether
+// to persist. Declaration/registry/config failures are exit 2, provider
+// failures exit 3.
+func classify(ctx context.Context, env *Env, raw []byte) (*classification, error) {
+	decl, err := preflight.Parse(raw)
+	if err != nil {
+		return nil, Fail("invalid pre-flight: %v", err)
+	}
+	if err := decl.Validate(env.Root); err != nil {
+		return nil, Fail("invalid pre-flight: %v", err)
+	}
+
+	reg, err := registry.Load(env.Root)
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+	if err := reg.Validate(env.Root); err != nil {
+		return nil, Fail("%v", err)
+	}
+	criteriaHash, err := reg.CriteriaHash(env.Root)
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+	criteria, err := dispatchableCriteria(env.Root, reg)
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+
+	cfg, err := state.LoadConfig(env.Root)
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+	branch, err := CurrentBranch(env.Root)
+	if err != nil {
+		return nil, err
+	}
+	modified, err := preflight.ModifiedFileCount(env.Root)
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+
+	payload, err := preflight.Derive(preflight.DeriveInput{
+		Raw:         raw,
+		Declaration: decl,
+		Facts:       provider.SessionFacts{Branch: branch, ModifiedFiles: modified},
+		Criteria:    criteria,
+	})
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+
+	p, err := providerFactory(cfg)
+	if err != nil {
+		return nil, Fail("%v", err)
+	}
+	decision, err := p.Decide(ctx, payload.State, payload.Questions)
+	if err != nil {
+		// Provider failures are exit 3: the harness switches to the joint
+		// fallback conversation and shows this message as evidence.
+		return nil, FailProvider("%v", err)
+	}
+
+	return resolve(decision, reg, cfg, criteriaHash, payload.PayloadHash, env)
+}
+
 // runDecideCmd classifies a declared pre-flight. The sequence is fixed:
 // declaration -> subsystem validation -> derive -> request -> provider ->
 // output. No diff is read and nothing is written.
@@ -69,75 +155,29 @@ func runDecideCmd(ctx context.Context, env *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	decl, err := preflight.Parse(data)
-	if err != nil {
-		return Fail("invalid pre-flight: %v", err)
-	}
-	if err := decl.Validate(env.Root); err != nil {
-		return Fail("invalid pre-flight: %v", err)
-	}
-
-	reg, err := registry.Load(env.Root)
-	if err != nil {
-		return Fail("%v", err)
-	}
-	if err := reg.Validate(env.Root); err != nil {
-		return Fail("%v", err)
-	}
-	criteriaHash, err := reg.CriteriaHash(env.Root)
-	if err != nil {
-		return Fail("%v", err)
-	}
-	criteria, err := dispatchableCriteria(env.Root, reg)
-	if err != nil {
-		return Fail("%v", err)
-	}
-
-	cfg, err := state.LoadConfig(env.Root)
-	if err != nil {
-		return Fail("%v", err)
-	}
-	branch, err := CurrentBranch(env.Root)
+	c, err := classify(ctx, env, data)
 	if err != nil {
 		return err
 	}
-	modified, err := preflight.ModifiedFileCount(env.Root)
-	if err != nil {
-		return Fail("%v", err)
-	}
-
-	payload, err := preflight.Derive(preflight.DeriveInput{
-		Raw:         data,
-		Declaration: decl,
-		Facts:       provider.SessionFacts{Branch: branch, ModifiedFiles: modified},
-		Criteria:    criteria,
+	return WriteJSON(env.Stdout, &DecideOutput{
+		Tier:          c.Tier,
+		Method:        c.SuggestedMethod,
+		Probabilities: c.Probabilities,
+		RequestID:     c.RequestID,
+		Provider:      c.Provider,
+		Model:         c.Model,
+		CriteriaHash:  c.CriteriaHash,
+		PayloadHash:   c.PayloadHash,
+		Ambiguous:     c.Ambiguous,
+		Substituted:   c.Substituted,
 	})
-	if err != nil {
-		return Fail("%v", err)
-	}
-
-	p, err := providerFactory(cfg)
-	if err != nil {
-		return Fail("%v", err)
-	}
-	decision, err := p.Decide(ctx, payload.State, payload.Questions)
-	if err != nil {
-		// Provider failures are exit 3: the harness switches to the joint
-		// fallback conversation and shows this message as evidence.
-		return FailProvider("%v", err)
-	}
-
-	out, err := resolve(decision, reg, cfg, criteriaHash, payload.PayloadHash, env)
-	if err != nil {
-		return err
-	}
-	return WriteJSON(env.Stdout, out)
 }
 
-// resolve turns the raw probabilities into the single decision the gate shows:
-// argmax tier, argmax available method, ambiguity flag, substitution flag.
+// resolve turns the raw probabilities into the classification the gate shows
+// and the record carries: argmax tier, argmax available method, ambiguity
+// flag, substitution flag.
 func resolve(decision *provider.Decision, reg *registry.Registry, cfg *state.Config,
-	criteriaHash, payloadHash string, env *Env) (*DecideOutput, error) {
+	criteriaHash, payloadHash string, env *Env) (*classification, error) {
 
 	tier, err := argmax(decision.Probabilities["effort_tier"])
 	if err != nil {
@@ -164,7 +204,7 @@ func resolve(decision *provider.Decision, reg *registry.Registry, cfg *state.Con
 	if method != ranked[0].name {
 		substituted = true
 		_, _ = fmt.Fprintf(env.Stderr,
-			"router decide: %q is unavailable in v1; substituted the next-best available method %q\n",
+			"router: %q is unavailable in v1; substituted the next-best available method %q\n",
 			ranked[0].name, method)
 	}
 
@@ -173,17 +213,17 @@ func resolve(decision *provider.Decision, reg *registry.Registry, cfg *state.Con
 		ambiguous = ranked[0].probability-ranked[1].probability <= AmbiguityThreshold
 	}
 
-	return &DecideOutput{
-		Tier:          tier,
-		Method:        method,
-		Probabilities: decision.Probabilities,
-		RequestID:     decision.RequestID,
-		Provider:      cfg.Provider,
-		Model:         cfg.Model,
-		CriteriaHash:  criteriaHash,
-		PayloadHash:   payloadHash,
-		Ambiguous:     ambiguous,
-		Substituted:   substituted,
+	return &classification{
+		Tier:            tier,
+		SuggestedMethod: method,
+		Probabilities:   decision.Probabilities,
+		RequestID:       decision.RequestID,
+		Provider:        cfg.Provider,
+		Model:           cfg.Model,
+		CriteriaHash:    criteriaHash,
+		PayloadHash:     payloadHash,
+		Ambiguous:       ambiguous,
+		Substituted:     substituted,
 	}, nil
 }
 

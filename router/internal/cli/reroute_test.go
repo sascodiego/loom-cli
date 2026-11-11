@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"loom/router/internal/provider"
 	"loom/router/internal/state"
 )
 
@@ -25,15 +28,167 @@ func recordOne(t *testing.T, root, input string) map[string]any {
 	return rec
 }
 
+// TestReRouteClassifiesFreshProvenance pins S2: the fresh record's provenance
+// comes from a real classification of the re-declared pre-flight, not from the
+// predecessor. The fake provider answers high/odd while the predecessor was
+// recorded medium/odd, so an inherited field could never satisfy the assertions.
+func TestReRouteClassifiesFreshProvenance(t *testing.T) {
+	root := routerRepo(t)
+	old := recordOne(t, root, validRecordInput)
+	oldID, _ := old["routing_id"].(string)
+
+	fake := &fakeProvider{answer: map[string]map[string]float64{
+		"effort_tier": {"low": 0.1, "medium": 0.15, "high": 0.75},
+		"method":      {"odd": 0.8, "ftd": 0.15, "egm-review-loop": 0.05},
+	}}
+	withFakeProvider(t, root, fake)
+
+	env, out, _ := newEnv(t, root, decideDeclaration)
+	err := Handle(context.Background(), env, "re-route", []string{
+		"--routing-id", oldID,
+		"--method", "ftd",
+		"--input", "-",
+	})
+	if err != nil {
+		t.Fatalf("re-route: %v", err)
+	}
+	var fresh map[string]any
+	if err := json.Unmarshal(out.Bytes(), &fresh); err != nil {
+		t.Fatalf("re-route output: %v", err)
+	}
+
+	if fresh["tier"] != "high" || fresh["tier"] == old["tier"] {
+		t.Fatalf("tier = %v, want the classification's high, not the inherited %v",
+			fresh["tier"], old["tier"])
+	}
+	if fresh["suggested_tier"] != "high" {
+		t.Fatalf("suggested_tier = %v, want the classification's tier", fresh["suggested_tier"])
+	}
+	if fresh["request_id"] != "trace-42" || fresh["request_id"] == old["request_id"] {
+		t.Fatalf("request_id = %v, want the provider's fresh trace id", fresh["request_id"])
+	}
+	sum := sha256.Sum256([]byte(decideDeclaration))
+	if fresh["payload_hash"] != hex.EncodeToString(sum[:]) {
+		t.Fatalf("payload_hash = %v, want the hash of the re-declared declaration", fresh["payload_hash"])
+	}
+	h := sha256.New()
+	for _, part := range []string{"odd criteria\n", "ftd criteria\n", "egm criteria\n"} {
+		h.Write([]byte(part))
+	}
+	if fresh["criteria_hash"] != hex.EncodeToString(h.Sum(nil)) {
+		t.Fatalf("criteria_hash = %v, want the registry-order hash", fresh["criteria_hash"])
+	}
+	// The method stays the user-approved choice; Clef's answer is preserved
+	// beside it as the suggestion.
+	if fresh["method"] != "ftd" {
+		t.Fatalf("method = %v, want the --method target", fresh["method"])
+	}
+	if fresh["suggested_method"] != "odd" {
+		t.Fatalf("suggested_method = %v, want Clef's answer", fresh["suggested_method"])
+	}
+	if fresh["provider"] != "cloudflare" || fresh["model"] != "@cf/cloudflare/clef" {
+		t.Fatalf("provider/model = %v/%v", fresh["provider"], fresh["model"])
+	}
+}
+
+// TestReRouteClassificationFailurePersistsNothing pins the S2 ordering: the
+// classification runs before anything is written, so a bad declaration or a
+// provider failure leaves the predecessor open, detect with its one candidate
+// and the history file untouched.
+func TestReRouteClassificationFailurePersistsNothing(t *testing.T) {
+	root := routerRepo(t)
+	old := recordOne(t, root, validRecordInput)
+	oldID, _ := old["routing_id"].(string)
+
+	historyBefore, err := state.ReadHistory(root, oldID)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+
+	assertUntouched := func(t *testing.T) {
+		t.Helper()
+		after, _, err := state.FindRecord(root, oldID)
+		if err != nil {
+			t.Fatalf("find predecessor: %v", err)
+		}
+		if after.Status != state.StatusOpen {
+			t.Fatalf("predecessor status = %q, want it still open", after.Status)
+		}
+		detEnv, detOut, _ := newEnv(t, root, "")
+		if err := Handle(context.Background(), detEnv, "detect", nil); err != nil {
+			t.Fatalf("detect: %v", err)
+		}
+		var det struct {
+			Candidates []struct {
+				RoutingID string `json:"routing_id"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(detOut.Bytes(), &det); err != nil {
+			t.Fatalf("detect output: %v", err)
+		}
+		if len(det.Candidates) != 1 || det.Candidates[0].RoutingID != oldID {
+			t.Fatalf("detect = %+v, want only the untouched predecessor", det)
+		}
+		historyAfter, err := state.ReadHistory(root, oldID)
+		if err != nil {
+			t.Fatalf("history: %v", err)
+		}
+		if len(historyAfter) != len(historyBefore) {
+			t.Fatalf("history grew from %d to %d events on a failed classification",
+				len(historyBefore), len(historyAfter))
+		}
+	}
+
+	t.Run("invalid declaration", func(t *testing.T) {
+		withFakeProvider(t, root, &fakeProvider{})
+		bad := strings.Replace(decideDeclaration, `"subsystems": ["router"]`, `"subsystems": ["billing"]`, 1)
+		env, out, _ := newEnv(t, root, bad)
+		err := Handle(context.Background(), env, "re-route", []string{
+			"--routing-id", oldID, "--method", "ftd", "--input", "-",
+		})
+		if err == nil || ExitCode(err) != ExitValidation {
+			t.Fatalf("err = %v, exit = %d, want a validation failure", err, ExitCode(err))
+		}
+		if out.Len() != 0 {
+			t.Fatalf("stdout = %q, want empty", out.String())
+		}
+		assertUntouched(t)
+	})
+
+	t.Run("provider failure", func(t *testing.T) {
+		withFakeProvider(t, root, &fakeProvider{
+			err: &provider.Failure{Kind: provider.FailureQuota, Status: 429, Attempts: 3},
+		})
+		env, out, _ := newEnv(t, root, decideDeclaration)
+		err := Handle(context.Background(), env, "re-route", []string{
+			"--routing-id", oldID, "--method", "ftd", "--input", "-",
+		})
+		if err == nil || ExitCode(err) != ExitProvider {
+			t.Fatalf("err = %v, exit = %d, want a provider failure", err, ExitCode(err))
+		}
+		if out.Len() != 0 {
+			t.Fatalf("stdout = %q, want empty", out.String())
+		}
+		assertUntouched(t)
+	})
+}
+
 func TestReRouteSupersedesAndOpensTheNewMethod(t *testing.T) {
 	root := routerRepo(t)
 	old := recordOne(t, root, validRecordInput)
 	oldID, _ := old["routing_id"].(string)
 
-	env, out, _ := newEnv(t, root, "")
+	fake := &fakeProvider{answer: map[string]map[string]float64{
+		"effort_tier": {"low": 0.1, "medium": 0.15, "high": 0.75},
+		"method":      {"odd": 0.8, "ftd": 0.15, "egm-review-loop": 0.05},
+	}}
+	withFakeProvider(t, root, fake)
+
+	env, out, _ := newEnv(t, root, decideDeclaration)
 	err := Handle(context.Background(), env, "re-route", []string{
 		"--routing-id", oldID,
 		"--method", "ftd",
+		"--input", "-",
 		"--justification", "scope grew past one subsystem",
 		"--requested-by", "agent",
 	})
@@ -55,8 +210,12 @@ func TestReRouteSupersedesAndOpensTheNewMethod(t *testing.T) {
 	if fresh["human_approved"] != false {
 		t.Fatal("a re-route is not a human-approved clef decision")
 	}
-	if fresh["tier"] != old["tier"] {
-		t.Fatalf("tier = %v, want the inherited %v", fresh["tier"], old["tier"])
+	if fresh["tier"] != "high" {
+		t.Fatalf("tier = %v, want the classification's high, not the inherited %v",
+			fresh["tier"], old["tier"])
+	}
+	if fresh["suggested_tier"] != "high" {
+		t.Fatalf("suggested_tier = %v, want the classification's tier", fresh["suggested_tier"])
 	}
 
 	superseded, _, err := state.FindRecord(root, oldID)
@@ -113,16 +272,19 @@ func TestReRouteRejectsBadInput(t *testing.T) {
 	rec := recordOne(t, root, validRecordInput)
 	id, _ := rec["routing_id"].(string)
 
+	withFakeProvider(t, root, &fakeProvider{})
+
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"unknown record", []string{"--routing-id", "nope", "--method", "ftd"}, "no open record"},
+		{"unknown record", []string{"--routing-id", "nope", "--method", "ftd", "--input", "-"}, "no open record"},
 		{"missing method", []string{"--routing-id", id}, "missing --method"},
-		{"unavailable method", []string{"--routing-id", id, "--method", "egm-review-loop"}, "unavailable"},
-		{"unknown method", []string{"--routing-id", id, "--method", "vibes"}, "unknown method"},
-		{"bad requester", []string{"--routing-id", id, "--method", "ftd", "--requested-by", "robot"}, "requested-by"},
+		{"missing input", []string{"--routing-id", id, "--method", "ftd"}, "missing --input"},
+		{"unavailable method", []string{"--routing-id", id, "--method", "egm-review-loop", "--input", "-"}, "unavailable"},
+		{"unknown method", []string{"--routing-id", id, "--method", "vibes", "--input", "-"}, "unknown method"},
+		{"bad requester", []string{"--routing-id", id, "--method", "ftd", "--input", "-", "--requested-by", "robot"}, "requested-by"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -146,7 +308,7 @@ func TestReRouteRejectsBadInput(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 	envR, _, _ := newEnv(t, root, "")
-	err := Handle(context.Background(), envR, "re-route", []string{"--routing-id", id, "--method", "ftd"})
+	err := Handle(context.Background(), envR, "re-route", []string{"--routing-id", id, "--method", "ftd", "--input", "-"})
 	if err == nil || !strings.Contains(err.Error(), "closed") {
 		t.Fatalf("re-route on closed = %v, want a closed-record refusal", err)
 	}
@@ -161,9 +323,13 @@ func TestReRouteNeverTouchesTheWorkingTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detect: %v", err)
 	}
-	env, _, _ := newEnv(t, root, "")
+	withFakeProvider(t, root, &fakeProvider{answer: map[string]map[string]float64{
+		"effort_tier": {"low": 0.2, "medium": 0.6, "high": 0.2},
+		"method":      {"odd": 0.8, "ftd": 0.15, "egm-review-loop": 0.05},
+	}})
+	env, _, _ := newEnv(t, root, decideDeclaration)
 	if err := Handle(context.Background(), env, "re-route", []string{
-		"--routing-id", id, "--method", "ftd", "--requested-by", "user",
+		"--routing-id", id, "--method", "ftd", "--input", "-", "--requested-by", "user",
 	}); err != nil {
 		t.Fatalf("re-route: %v", err)
 	}
