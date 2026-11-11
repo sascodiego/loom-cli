@@ -64,5 +64,9 @@ commit per task.
   method remains the user-approved target, so the call supplies provenance and
   evidence, not authority — the user's choice is what the record says, and
   `suggested_method`/`suggested_tier` preserve what Clef answered.
+- **L5** (delivery) Slice boundary recorded: PR #1 holds commits 2fb9215 (supersede
+  atomicity + stale-schema naming); this PR holds everything after it on
+  `fix/drift-fixes`. The 427-line count reported against `main` includes PR #1's
+  268, so this PR's own slice starts at ~159 lines.
 - **L4** (decision) Branch strategy: `fix/drift-fixes` is chained on
   `fix/review-warnings` (PR #1) because both touch `reroute.go`; the PR will say so.
