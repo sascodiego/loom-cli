@@ -86,16 +86,16 @@ milestone leaves the tree buildable and tested.
 | T2 | `router/go.mod`, `cmd/router/main.go`, `internal/cli/common.go` — entrypoint, flag parsing, repo-root discovery, exit-code contract | S7 | inline | 2ecff7c |
 | T3 | `internal/state/open.go` + `history.go` — record read/write, append-only JSONL, branch encoding, UUID minting | S5, S6, S14 | inline | 4c53dcd |
 | T4 | `internal/state/detect.go` + `config.go` + `cli/{detect,record,close}.go` + state tests | S2, S5, S7 | inline | 3287031 |
-| T5 | `internal/preflight/schema.go` + `validate.go` + tests — declaration schema, subsystem validation | S4, S7 | inline | |
-| T6 | `router/registry.json` + 5 `criteria/<method>/CRITERIA.md` + registry tests | S1, S8, S9, S10 | inline | |
-| T7 | `internal/provider/{provider,request,cloudflare}.go` + `cloudflare_test.go` — Clef adapter, retry, payload | S11, S12 | inline | |
-| T8 | `internal/preflight/derive.go` + `cli/decide.go` + `decide_test.go` | S4, S9, S11, S18 | inline | |
-| T9 | `cli/reroute.go` + `metrics.go` + `main_test.go` + `e2e_test.go` | S7, S13, S17 | inline | |
-| T10 | `skills/method-router/SKILL.md` + `references/preflight-schema.md` + `references/engram-mirror.md` | S18, S19, S2 | inline | |
-| T11 | `docs/engram-contract.md` master + `_shared/` copies (ftd, asdd, egm) | S15 | inline | |
-| T12 | `rsc-ftd` + `rsc-asdd` SKILL.md persistence edits (1 + 7 files) | S15 | inline | |
-| T13 | `egm` SKILL.md persistence edits (3 files) + goldfish rule | S15 | inline | |
-| T14 | M7 verification: closed-set `genlte-sdd` reference check | S16 | inline | |
+| T5 | `internal/preflight/schema.go` + `validate.go` + tests — declaration schema, subsystem validation | S4, S7 | inline | 69b2592 |
+| T6 | `router/registry.json` + 5 `criteria/<method>/CRITERIA.md` + registry tests | S1, S8, S9, S10 | inline | 5229051 |
+| T7 | `internal/provider/{provider,request,cloudflare}.go` + `cloudflare_test.go` — Clef adapter, retry, payload | S11, S12 | inline | 324ffe7 |
+| T8 | `internal/preflight/derive.go` + `cli/decide.go` + `decide_test.go` | S4, S9, S11, S18 | inline | e48c49e |
+| T9 | `cli/reroute.go` + `metrics.go` + `main_test.go` + `e2e_test.go` | S7, S13, S17 | worker | 11fa6a6 |
+| T10 | `skills/method-router/SKILL.md` + `references/preflight-schema.md` + `references/engram-mirror.md` | S18, S19, S2 | inline | ece1d9d |
+| T11 | `docs/engram-contract.md` master + `_shared/` copies (ftd, asdd, egm) | S15 | worker | 3b2fcbe |
+| T12 | `rsc-ftd` + `rsc-asdd` SKILL.md persistence edits (1 + 7 files) | S15 | worker | 3b2fcbe |
+| T13 | `egm` SKILL.md persistence edits (3 files) + goldfish rule | S15 | worker | 3b2fcbe |
+| T14 | M7 verification: closed-set `genlte-sdd` reference check | S16 | inline | verified, see L9 |
 | T15 | `router/README.md` + root `README.md` + analysis supersession line | S17 | inline | |
 
 Delivery: no git remote in this repository → the PR-chaining menu does not
@@ -118,6 +118,32 @@ units in commit order per milestone.
   guard fails `TestDetectWarnsOnMalformedAndForeignRecords` — the second check
   caught a weak assertion that was then strengthened to pin the collision
   guard exactly. From T5 onward tests are written first and RED is observed.
+- **L6** (decision, implementation) `decide` prints `payload_hash` in addition to
+  the design's listed fields. It is not decoration: `record` requires it, and the
+  design makes `record` carry the hash of the exact pre-flight that was
+  classified. Without it in `decide`'s output the skill would have to recompute a
+  hash over prose it may have re-serialized.
+- **L7** (decision, implementation) A re-route inherits the old record's `tier`,
+  `slug`, `request_id`, `provider`, `model`, `criteria_hash` and `payload_hash`
+  rather than re-classifying: the work is the same work, only the method changes,
+  and the justification belongs to the audit trail. The new record carries
+  `decided_by: override_re_route`, `human_approved: false`, `user_choice` = target.
+- **L8** (decision, implementation) `metrics` treats a `decided_by: clef` decision
+  recorded under a stale `schema_version` as not comparable: it is counted in
+  `by_decided_by` but dropped from the agreement denominator instead of being
+  scored as a disagreement, because its criteria contract is not the current one.
+- **L9** (evidence, M7) Closed-set reference check, command and scope:
+  `git grep -n genlte-sdd` over tracked files. Living product files (packages,
+  skills, router, READMEs) return zero hits. Remaining hits are declared exempt:
+  the EGM review artifacts and the analysis under `docs/analysis/` (historical
+  record), plus `docs/designs/method-router.md` and this feature document, which
+  must name the old path to define and verify the rename. Dated 2026-11-11.
+- **L10** (evidence, close) Full suite at feature close: `go vet ./...` clean,
+  `go test ./...` green across cmd/router, internal/cli, internal/preflight,
+  internal/provider, internal/registry, internal/state. Real-binary smoke runs:
+  `detect` on the repository (verdict new), `decide` without config (exit 2 with
+  a named path), and a temp-repo run of record → metrics (suppressed) → re-route →
+  detect (continuation on the fresh record) → history event order.
 - **L5** (decision, implementation) Encoded-branch collisions (`fix/339` and
   `fix--339` encode to the same component) are resolved by the record's true
   `branch` field, not by changing the encoding the design pins: readers filter

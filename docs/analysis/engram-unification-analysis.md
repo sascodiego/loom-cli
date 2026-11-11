@@ -1,3 +1,9 @@
+> **Superseded as authority by `docs/designs/method-router.md`** (Status: Reviewed).
+> This analysis is the historical input that design was built on: §5 and §6 remain
+> the source of the five persistence rules adopted verbatim in
+> `docs/engram-contract.md`. The body below is kept as historical record and is not
+> updated to match the shipped implementation.
+
 # Unifying the three methods on Engram — analysis (proposal only)
 
 Status: design analysis, no implementation. Covers: what memory each extracted method
