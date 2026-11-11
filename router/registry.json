@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "methods": [
+    {
+      "name": "odd",
+      "criteria": "router/criteria/odd/CRITERIA.md",
+      "skill": "harness native (ODD inline)",
+      "namespace": "odd",
+      "available": true
+    },
+    {
+      "name": "ftd",
+      "criteria": "router/criteria/ftd/CRITERIA.md",
+      "skill": "rsc-ftd/system/skills/ftd",
+      "namespace": "ftd",
+      "available": true
+    },
+    {
+      "name": "asdd",
+      "criteria": "router/criteria/asdd/CRITERIA.md",
+      "skill": "rsc-asdd/system/skills/asdd",
+      "namespace": "asdd",
+      "available": true
+    },
+    {
+      "name": "gentle-sdd",
+      "criteria": "router/criteria/gentle-sdd/CRITERIA.md",
+      "skill": "gentle-sdd/",
+      "namespace": "sdd",
+      "available": true
+    },
+    {
+      "name": "egm-review-loop",
+      "criteria": "router/criteria/egm-review-loop/CRITERIA.md",
+      "skill": "egm/system/skills/egm-review-loop",
+      "namespace": "egm",
+      "available": false
+    }
+  ]
+}
