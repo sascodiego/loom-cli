@@ -56,3 +56,34 @@ func TestUnknownSubcommandIsValidationError(t *testing.T) {
 		t.Fatalf("stderr = %q, want unknown-subcommand message", stderr)
 	}
 }
+
+// A real subcommand's validation failure must reach exit 2 through run(), so
+// the per-subcommand mapping in the design (close emits 2 on validation,
+// re-route emits 2 on closed or unknown records) holds at the binary layer.
+func TestSubcommandValidationFailureIsExitTwo(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"close without routing id", []string{"close"}, "missing --routing-id"},
+		{"re-route without routing id", []string{"re-route", "--method", "odd"}, "missing --routing-id"},
+		{"re-route without method", []string{"re-route", "--routing-id", "x"}, "missing --method"},
+		{"metrics with a positional argument", []string{"metrics", "extra"}, "unexpected argument"},
+		{"re-route with a bad requester", []string{"re-route", "--routing-id", "x", "--method", "odd", "--requested-by", "robot"}, "requested-by"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, stdout, stderr := runCapture(t, tt.args...)
+			if code != cli.ExitValidation {
+				t.Fatalf("exit = %d, want %d", code, cli.ExitValidation)
+			}
+			if stdout != "" {
+				t.Fatalf("stdout = %q, want empty", stdout)
+			}
+			if !strings.Contains(stderr, tt.want) {
+				t.Fatalf("stderr = %q, want %q", stderr, tt.want)
+			}
+		})
+	}
+}
