@@ -2,3 +2,4 @@
 # build output
 /router/bin/
 *.test
+last.session
