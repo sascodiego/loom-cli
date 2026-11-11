@@ -144,6 +144,13 @@ will execute.
 The task list is **not** a new document. Append it to the existing plan under a
 `## Tasks` heading:
 
+**Engram mirror.** Appending or updating the task table is a dual write: the plan file
+stays the authority, and the table is upserted as `asdd/{change}/tasks` (`mem_save`,
+`title` = `topic_key`, `type: architecture`, `capture_prompt: false`, `scope: project`),
+read back after the write. A failed mirror is reported as a **partial write** naming the
+outstanding locator: never retried in a loop, never blocking the handoff. Contract:
+`../_shared/engram-contract.md`.
+
 ```text
 02-DOCS/wiki/sdd/plans/<slug>.md
   ├─ ## Architecture        (from plan)

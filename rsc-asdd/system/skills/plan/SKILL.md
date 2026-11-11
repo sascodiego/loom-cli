@@ -88,6 +88,8 @@ spec, same name, because that is how `tasks`, `analyze` and `implement` find it.
 `02-DOCS/wiki/index.md` (the Knowledge map) — never the root `CLAUDE.md`. If a plan for
 this slug already exists, update it in place and note what changed — never fork a `-v2`.
 
+**Engram mirror.** Writing or updating the plan is a dual write: the file above stays the authority, and the plan is upserted as `asdd/{change}/plan` (`mem_save`, `title` = `topic_key`, `type: architecture`, `capture_prompt: false`, `scope: project`), read back after the write. A failed mirror is reported as a **partial write** naming the outstanding locator: never retried in a loop, never blocking the handoff. Contract: `../_shared/engram-contract.md`.
+
 ## Model tier — `heavy` (opt-in routing)
 
 Architecture, interfaces, data flow and risk are the heaviest reasoning in the chain, so this

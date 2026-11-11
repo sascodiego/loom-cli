@@ -319,3 +319,11 @@ strictly:
     `<DESIGN_PATH>` with the host's command form (for example
     `/egm:egm-review <DESIGN_PATH>` in Claude Code and agy CLI, or the skill
     picker in Codex).
+
+**Persistence (Engram mirror).** Writing the finalized design document — and every
+`design_draft.md` section update along the way — is a dual write: the file on disk stays
+the source of truth, and the draft is upserted as `egm/<doc-slug>/draft` (`mem_save`,
+`title` = `topic_key`, `type: architecture`, `capture_prompt: false`, `scope: project`,
+`<doc-slug>` = the design's name), read back after the write. A failed mirror is reported
+as a **partial write** naming the outstanding locator: never retried in a loop, never
+blocking the approval gates. Contract: `../_shared/engram-contract.md`.

@@ -271,6 +271,8 @@ Ship is mostly git actions, but the outcome is recorded so the knowledge model s
 
 Archive after option 1/2 lands, and also after option 3 parks/discards so paused or abandoned work is remembered.
 
+**Engram mirror.** The closing artifacts dual-write: the files above stay the authority, and ship upserts `asdd/{change}/verification` (the verification record) and `asdd/{change}/review` (the closing review verdict and archive state) — `mem_save`, `title` = `topic_key`, `type: architecture`, `capture_prompt: false`, `scope: project` — each read back after its write. A failed mirror is reported as a **partial write** naming the outstanding locator: never retried in a loop, never blocking the landing. Contract: `../_shared/engram-contract.md`.
+
 ## Result envelope
 
 End with:

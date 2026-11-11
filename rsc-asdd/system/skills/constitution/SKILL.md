@@ -86,6 +86,8 @@ Write `02-DOCS/wiki/sdd/constitution.md` from the template in `references/consti
 
 Create `02-DOCS/wiki/sdd/` if it does not exist. Do not overwrite an existing constitution — amend it.
 
+**Engram mirror.** Writing the constitution (and every later amendment) is a dual write: the file above stays the authority, and the same content is upserted as `asdd/{change}/constitution` (`mem_save`, `title` = `topic_key`, `type: architecture`, `capture_prompt: false`, `scope: project`), read back after the write — `{change}` is the change slug the dispatcher passed in. A failed mirror is reported as a **partial write** naming the outstanding locator: never retried in a loop, never blocking the ratification. Contract: `../_shared/engram-contract.md`.
+
 **A draft is "complete me", not "amend me".** `rsc onboard` writes a skeleton with `status: draft` in the frontmatter: the template's headings, the facts onboarding knew (goal, kind, scope, workflow, detected stack) and no principle. Keep those facts, run the interview, fill the sections, then on ratification drop `status: draft`, set `version: v1.0.0` and log v1.0.0 in the amendment log.
 
 ## REVIEW.md — what the reviewer reads first

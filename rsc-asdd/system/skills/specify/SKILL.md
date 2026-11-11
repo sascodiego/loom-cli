@@ -97,6 +97,8 @@ A frontier of one is one question, and needs no apology. A frontier of zero is n
 
 Write these sections into `02-DOCS/wiki/sdd/specs/<slug>.md` using `references/spec-template.md`. Keep every line about behaviour and intent.
 
+**Engram mirror.** Writing or revising the spec is a dual write: the file above stays the authority, and the same content is upserted as `asdd/{change}/spec` (`mem_save`, `title` = `topic_key`, `type: architecture`, `capture_prompt: false`, `scope: project`), read back after the write. A failed mirror is reported as a **partial write** naming the outstanding locator: never retried in a loop, never blocking the approval gate. Contract: `../_shared/engram-contract.md`.
+
 | Section | Holds | Watch for |
 | --- | --- | --- |
 | Problem & why | The pain, the cost of not solving it, the trigger | A "solution" disguised as a problem |

@@ -139,6 +139,15 @@ REVIEW.md                    ← project root: how this repo is judged
 
 The directory keeps its `sdd/` name: existing projects keep working. Index it in `02-DOCS/wiki/index.md` under the `sdd/` topic — never in the root `CLAUDE.md`; the harness keeps it honest.
 
+## Persistence — store mode and locators
+
+Store mode is **`hybrid`** — fixed per change, never asked, never downgraded. The files under `02-DOCS/wiki/sdd/` stay the authority (tier-2 gates and audits read them, never an observation); Engram mirrors each artifact for recovery and search. Every phase runs a dual write — the artifact on disk, then its `asdd/{change}/…` topic-key upsert, read back — and a failed mirror is reported as a partial write naming the outstanding locator, never retried in a loop, never blocking the phase. The dispatcher resolves the artifact locators once per change — the file paths plus
+the topic keys `asdd/{change}/constitution`, `asdd/{change}/spec`, `asdd/{change}/plan`,
+`asdd/{change}/tasks`, `asdd/{change}/progress`, `asdd/{change}/verification`,
+`asdd/{change}/review` and `asdd/{change}/decisions/{id}` — and passes them into every
+phase launch. The `.rsc/` ledger is never mirrored. Naming table and the five rules:
+`_shared/engram-contract.md` (canonical: `docs/engram-contract.md`).
+
 ## Stack handoff and skill registry
 
 ASDD is process, not stack: `plan` defers stack specifics, `implement` borrows the stack skill's testing approach, `verify` runs its checks (`../fastapi/SKILL.md`, `../nextjs/SKILL.md`, `../go/SKILL.md`, `../postgresdb/SKILL.md`, `../flutter/SKILL.md`; UI → `../design/SKILL.md`). Choose skills through `.rsc/skill-registry.json`, digest them into 4-5 compact rules per subagent brief, never load the catalog.

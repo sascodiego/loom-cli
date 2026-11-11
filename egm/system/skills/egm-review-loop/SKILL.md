@@ -43,6 +43,11 @@ use direct dispatch instead of the synthesizer. See `docs/harnesses.md`.
 If your harness has no subagent tool, stop and tell the user: a review in the same
 context is not a Goldfish review.
 
+**Memory-blind reviewers (hard rule).** Goldfish reviewer subagents never call `mem_*` —
+no `mem_search`, no `mem_context`, no save. Their fresh eyes are the method; prior-session
+memory would defeat it. The document reaches them via the prompt or a locator (file path)
+only, never through the memory layer.
+
 ## Inputs
 
 The caller or user provides exactly these parameters:
@@ -142,6 +147,15 @@ file` mode is specified, confirm full-file line bounds).
     in the report. Never count it as a reviewer with zero findings. If the
     synthesizer summary has no status for a requested reviewer, record that
     reviewer as not run.
+4.  **Engram mirror (Elephant side only)**: After consolidating the round's
+    findings, dual-write the round: the report artifact stays the source of
+    truth, and the round is upserted as `egm/<doc-slug>/review/<round>`
+    (`mem_save`, `title` = `topic_key`, `type: architecture`,
+    `capture_prompt: false`, `scope: project`; findings + resolution status),
+    read back after the write. A failed mirror is reported as a **partial
+    write** naming the outstanding locator: never retried in a loop, never
+    blocking the loop. Reviewers stay memory-blind (see Delegation). Contract:
+    `../_shared/engram-contract.md`.
 
 #### 2.3 Aggregated Resolution Hand-off
 

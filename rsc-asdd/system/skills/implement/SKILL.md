@@ -308,6 +308,10 @@ Log the **non-obvious** ones — the choices a reviewer would otherwise have to 
 the diff. Do not log "named the variable `count`". If a decision contradicts the constitution, you do
 not get to log your way around it: stop (see red flags).
 
+Each logged decision also upserts `asdd/{change}/decisions/<id>` (`type: decision`) in Engram, read
+back — the same dual-write and partial-reporting rules as the progress ledger
+(`../_shared/engram-contract.md`).
+
 ## Staying inside the constitution
 
 `02-DOCS/wiki/sdd/constitution.md` holds the project's non-negotiables (stack canon, quality bars,

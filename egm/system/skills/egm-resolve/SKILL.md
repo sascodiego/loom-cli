@@ -182,6 +182,13 @@ Interpret the user's action/response as follows:
 1.  **Re-verify Lines**: If changes were made to `TargetFile`, verify that the
     file remains structurally coherent and valid markdown.
 2.  Mark the report as resolved (add a `Status: resolved` line at the top).
-3.  **Handoff**: Exit cleanly back to the caller (such as `egm-review-loop`)
+3.  **Persistence (Engram mirror)**: Marking the report resolved dual-writes: the report
+    file stays the source of truth, and the outcome is upserted as
+    `egm/<doc-slug>/resolution` (`mem_save`, `title` = `topic_key`,
+    `type: architecture`, `capture_prompt: false`, `scope: project`; accepted, contested,
+    escalated and declined counts), read back after the write. A failed mirror is
+    reported as a **partial write** naming the outstanding locator: never retried in a
+    loop, never blocking the exit. Contract: `../_shared/engram-contract.md`.
+4.  **Handoff**: Exit cleanly back to the caller (such as `egm-review-loop`)
     with the count of accepted fixes, contested items, escalated items,
     declined items, and remaining unaddressed issues.

@@ -60,6 +60,18 @@ the test output, the command's result, the page rendering. A task whose check wa
 could not run is recorded as such, honestly. The tenth principle applies here exactly as it does in
 the chain: a result asserted without evidence is treated as not done.
 
+## Persistence (Engram mirror)
+
+The feature document on disk stays the source of truth. Alongside it, the lane keeps one
+Engram observation as recovery memory: after **every** feature-doc mutation, dual write —
+the file first, then upsert `ftd/{slug}/feature-doc` (`mem_save`, `title` = `topic_key`,
+`type: architecture`, `capture_prompt: false`, `scope: project`) — and read the write back.
+On a one-sided failure, report the write as a **partial write** naming the outstanding
+locator: never retried in a loop, never rolling back the side that landed, never claiming
+the two stores are synchronized, never blocking the work. The full contract — the five
+rules and this package's naming table — is `../_shared/engram-contract.md` (canonical:
+`docs/engram-contract.md`).
+
 ## The minimal loop — per change that writes code
 
 The lane inherits ASDD's per-task loop, cut to its floor:
