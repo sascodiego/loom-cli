@@ -1,0 +1,4 @@
+# router runtime state is tracked on purpose (.router/); nothing to ignore there.
+# build output
+/router/bin/
+*.test
